@@ -196,6 +196,10 @@ int snxvk_start(void){
   if(!g_ww_ok){ WARN("vulkan_native: guest memory has no write tracking: using OpenGL\n"); return 0; }
 #endif
   snprintf(g_cachedir,sizeof g_cachedir,"%svulkan_native/",g_exedir); plat_mkdir(g_cachedir);
+#ifdef __ANDROID__
+  { extern const char* android_driver_cache_id(void);
+    snprintf(g_cachedir,sizeof g_cachedir,"%svulkan_native/%s/",g_exedir,android_driver_cache_id()); plat_mkdir(g_cachedir); }
+#endif
   { extern int g_opt_vsync; snxvk_opt_vsync=g_opt_vsync; }
   { /* our .ini into their g_settings (swr_settings.c). Their recording thread records the frame's commands; DLSS and
        HDR output record directly into the frame's command buffer, so with either on it stays off (both need a restart) */

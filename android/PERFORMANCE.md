@@ -67,3 +67,25 @@ The launcher exposes 50–200% internal resolution, 60/90/120 FPS or unlimited,
 shadows, FXAA, anisotropy and VSync. Its Performance preset chooses 75% resolution
 and disables shadows/FXAA; Quality chooses native resolution, shadows/FXAA and
 4× filtering. Neither preset changes the selected FPS limit or promises a rate.
+
+## Custom-driver validation
+
+The Vulkan build now imports standard AdrenoTools driver ZIPs and offers System
+or an installed custom package in the launcher. No vendor/name allowlist is used.
+The Nova's existing `Turnip Adreno Driver T23 (@Mr_Purple_666)` package imported
+through Android's document picker and actually initialized as
+`PurpleVK-public Adreno (TM) 740`, Vulkan 1.4.335, driver `06463063`. The selected
+`vulkan.purple.so` was verified in the game process's memory maps. The title and
+loaded save room rendered. A package with generic name/vendor metadata also
+imported and initialized through the same path.
+
+The custom-driver save-room screenshot showed 78 FPS at 75% resolution with
+shadows and FXAA off. This is a static-scene sample, not active-gameplay average
+or a controlled comparison: the earlier system-Vulkan 37 FPS screenshot used
+native resolution. These numbers must not be presented as a driver speedup.
+
+On-device negative import checks rejected directory traversal and a non-ARM64
+ELF payload, left no partial staging installation, and retained the previous
+selection. Successful-package import and persisted selection were checked.
+Driver-start failure recovery and other driver binaries remain untested. Driver
+packages remain user-supplied; none are included in Git or in the APK.

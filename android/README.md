@@ -69,8 +69,34 @@ compiles its compute shaders using host glslang (pinned source built if absent).
 It requires Vulkan 1.3 and device features accepted by that renderer. Check the
 runtime log for `renderer: native Vulkan`; initialization failure falls back to
 OpenGL ES. The Vulkan build includes the relevant GPL license and notices.
-Both renderers currently use the system driver. Importing Turnip drivers, DLSS,
-frame generation, and desktop front-end menus are not supported on Android.
+The Vulkan build includes [libadrenotools](https://github.com/bylaws/libadrenotools)
+(pinned revision `8fae8ce254dfc1344527e05301e43f37dea2df80`) and its pinned
+linker-namespace dependency, with their BSD notices. The APK extracts its native
+libraries so the loader can locate the required hooks. DLSS, frame generation,
+and desktop front-end menus are not supported on Android.
+
+### Custom Vulkan drivers
+
+In the launcher, scroll to **Graphics driver**, choose **Import custom driver ZIP**,
+and select a compatible package using Android's document picker. The format is
+AdrenoTools-style `meta.json` (schema 1), naming an ARM64 ELF driver in
+`libraryName`, plus that library and its supporting files. Select the imported
+package in the Vulkan-driver dropdown, then Save settings or Play. Compatible
+Qualcomm, Turnip and other AdrenoTools packages use the same importer. Binary compatibility still depends on the GPU, Android version and driver.
+OpenGL ES always uses the system driver.
+
+Imports copy into private app storage; the original ZIP can be moved afterward.
+The importer checks metadata/minimum Android API, ELF architecture, archive size,
+duplicate paths and directory traversal before completing installation. Shader
+caches are separated by package ID. **Remove selected custom driver** removes the
+app's copy and selects System; it does not delete the original ZIP.
+
+The **Last launch** status reports which library loaded. The native Vulkan path
+verifies the selected file is mapped after initialization. A reported custom-driver
+initialization failure returns to the launcher with an error; it does not silently
+switch to the system renderer. Select System or import another compatible driver
+when recovering from a failed launch. Installed drivers and selection survive APK
+updates. Driver binaries are user-supplied and are not bundled in this repository.
 
 Validated on the Retroid Pocket Nova (Android 13, Adreno 740, 1280x960 at 120 Hz):
 all 9,774 RomFS files passed on-device SHA-1 verification; the game loaded an

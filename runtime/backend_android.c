@@ -82,8 +82,17 @@ int video_has_gl(void){ return 1; }
 
 void video_init(const char* title){ (void)title;
 #ifdef SWR_HAVE_SNXVK
-  extern int snxvk_start(void); if(snxvk_start()) return;
+  extern int snxvk_start(void), android_driver_custom(void), android_driver_confirm(void);
+  extern const char* android_driver_error(void); extern void android_driver_status(const char*);
+  int started=snxvk_start();
+  if(started && android_driver_confirm()) return;
+  if(android_driver_custom()){
+    char message[900]; snprintf(message,sizeof message,"Driver launch failed: %s",android_driver_error());
+    android_driver_status(message); WARN("%s\n",message); log_flush();
+    ANativeActivity_finish(g_act); plat_sleep_ns(200000000); _exit(0);
+  }
 #endif
+  extern void android_driver_status(const char*); android_driver_status("Using system OpenGL ES driver");
   extern void gpu_gl_start(void); gpu_gl_start(); }
 
 void video_present_rgba(const u32* px, int w, int h, int stride){ extern void gpu_gl_present_cpu(const u32*,int,int,int); gpu_gl_present_cpu(px,w,h,stride); }
@@ -139,7 +148,7 @@ void backend_gl_swap(void){
 void backend_window_size(int* w, int* h){ *w=g_sw; *h=g_sh; }
 
 #ifdef SWR_HAVE_SNXVK
-void* backend_vk_loader(void){ static void* lib; if(!lib) lib=dlopen("libvulkan.so",RTLD_NOW|RTLD_LOCAL); return lib?dlsym(lib,"vkGetInstanceProcAddr"):NULL; }
+void* backend_vk_loader(void){ extern void* android_vulkan_loader(void); return android_vulkan_loader(); }
 const char* const* backend_vk_extensions(u32* n){ static const char* const names[]={"VK_KHR_surface","VK_KHR_android_surface"}; *n=2; return names; }
 int backend_vk_surface(VkInstance instance,VkSurfaceKHR* surface){
   pthread_mutex_lock(&g_mx); while(!g_win) pthread_cond_wait(&g_cv,&g_mx);

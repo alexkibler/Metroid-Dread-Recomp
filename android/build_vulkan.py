@@ -31,6 +31,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--jobs', type=int, default=8)
     args = parser.parse_args()
+    build.adreno_dependencies()
     sdk, ndk, cmake, llvm = build.sdk_paths()
     OUT.mkdir(parents=True, exist_ok=True)
     GEN.mkdir(parents=True, exist_ok=True)

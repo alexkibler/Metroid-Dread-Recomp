@@ -67,6 +67,12 @@ def dependencies(jobs):
              'TARGET=android-28', 'libdecoder.a', 'libcommon.a'], cwd=oh)
 
 
+def adreno_dependencies():
+    source = checkout('libadrenotools', 'https://github.com/bylaws/libadrenotools.git',
+                      '8fae8ce254dfc1344527e05301e43f37dea2df80')
+    run(['git', '-C', source, 'submodule', 'update', '--init', '--recursive'])
+
+
 def generate(exefs):
     sys.path.insert(0, str(ROOT))
     sys.path.insert(0, str(ROOT / 'dread'))
@@ -118,11 +124,12 @@ def package():
     licenses = assets / 'licenses'
     licenses.mkdir(parents=True, exist_ok=True)
     for p in [ROOT / 'LICENSE.txt', ROOT / 'NOTICE.txt', ROOT / 'runtime/bcn/LICENSE_texture2ddecoder.txt',
-              LOCAL / 'libvpx/LICENSE', LOCAL / 'openh264/LICENSE']:
+              LOCAL / 'libvpx/LICENSE', LOCAL / 'openh264/LICENSE', ndk / 'NOTICE.toolchain']:
         if p.is_file():
             shutil.copy2(p, licenses / (p.parent.name + '-' + p.name))
     if enabled:
-        for p in [ROOT / 'LICENSE-GPL-3.0.txt', ROOT / 'runtime/snxvk/LICENSE', ROOT / 'runtime/snxvk/NOTICE']:
+        for p in [ROOT / 'LICENSE-GPL-3.0.txt', ROOT / 'runtime/snxvk/LICENSE', ROOT / 'runtime/snxvk/NOTICE',
+                  LOCAL / 'libadrenotools/LICENSE', LOCAL / 'libadrenotools/lib/linkernsbypass/LICENSE']:
             shutil.copy2(p, licenses / (p.parent.name + '-' + p.name))
     unsigned = stage / 'unsigned.apk'
     classes = LOCAL / 'classes'
@@ -135,12 +142,18 @@ def package():
     unsigned.unlink(missing_ok=True)
     run([tools / 'aapt', 'package', '-f', '-M', ANDROID / 'AndroidManifest.xml',
          '-I', sdk / 'platforms/android-35/android.jar', '-A', assets, '-F', unsigned])
-    libs = ['libdread.so', 'libMetroidDread_code.so']
+    libs = [BUILD / 'libdread.so', BUILD / 'libMetroidDread_code.so',
+            next((ndk / 'toolchains/llvm/prebuilt').glob('*/sysroot/usr/lib/aarch64-linux-android/libc++_shared.so'))]
+    if enabled:
+        hooks = BUILD / 'adrenotools/src/hook'
+        libs += [hooks / ('lib' + name + '.so') for name in
+                 ('main_hook', 'hook_impl', 'file_redirect_hook', 'gsl_alloc_hook')]
     with zipfile.ZipFile(unsigned, 'a', compression=zipfile.ZIP_DEFLATED) as apk:
         apk.write(stage / 'classes.dex', 'classes.dex')
-        for name in libs:
+        for source in libs:
+            name = source.name
             stripped = stage / name
-            shutil.copy2(BUILD / name, stripped)
+            shutil.copy2(source, stripped)
             run([llvm / 'llvm-strip', '--strip-unneeded', stripped])
             apk.write(stripped, 'lib/arm64-v8a/' + name)
     aligned = stage / 'aligned.apk'
@@ -174,7 +187,7 @@ def main():
         run([cmake / 'cmake', '-S', ANDROID, '-B', BUILD, '-G', 'Ninja',
              f'-DCMAKE_MAKE_PROGRAM={cmake / "ninja"}',
              f'-DCMAKE_TOOLCHAIN_FILE={ndk / "build/cmake/android.toolchain.cmake"}',
-             '-DANDROID_ABI=arm64-v8a', '-DANDROID_PLATFORM=android-28',
+             '-DANDROID_ABI=arm64-v8a', '-DANDROID_PLATFORM=android-28', '-DANDROID_STL=c++_shared',
              '-DCMAKE_BUILD_TYPE=Release', f'-DGAME_BUILD_DIR={game}',
              '-DSWR_ANDROID_VULKAN=' + ('ON' if a.vulkan else 'OFF')])
         run([cmake / 'cmake', '--build', BUILD, f'-j{a.jobs}'])

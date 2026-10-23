@@ -16,7 +16,9 @@ public final class LauncherActivity extends Activity {
     private final Map<String, String[]> values = new LinkedHashMap<>();
     private final Map<String, CheckBox> checks = new LinkedHashMap<>();
     private String original;
-    private TextView status;
+    private TextView status, driverStatus;
+    private boolean importing;
+    private static final int IMPORT_DRIVER=42;
     private SeekBar volume;
     private boolean vulkan;
     private final int foreground = Color.rgb(231, 239, 245);
@@ -57,6 +59,7 @@ public final class LauncherActivity extends Activity {
                 if (!current.equals(original)) { loadSettings(current); createScreen(); }
             }
         } catch (IOException e) { if (status != null) status.setText("Could not reload settings: " + e.getMessage()); }
+        updateDriverStatus();
     }
 
     private int dp(int n) { return Math.round(n * getResources().getDisplayMetrics().density); }
@@ -153,10 +156,27 @@ public final class LauncherActivity extends Activity {
         catch (NumberFormatException e) { volume.setProgress(100); }
         display.addView(volume);
         display.addView(text("GRAPHICS DRIVER", 18, foreground));
-        display.addView(text("System driver", 16, foreground));
-        display.addView(text(vulkan
-                ? "Vulkan is experimental. This build uses the system driver; importing custom Turnip drivers is not yet supported."
-                : "This build contains OpenGL ES. Turnip requires the Vulkan build and custom-driver loading support.", 13, muted));
+        if (vulkan) {
+            List<DriverPackage.Info> drivers=DriverPackage.list(this);
+            List<String> labels=new ArrayList<>(), ids=new ArrayList<>();
+            labels.add("System driver"); ids.add("");
+            for (DriverPackage.Info driver:drivers) { labels.add(driver.name); ids.add(driver.id); }
+            String selected=setting("custom_driver", "");
+            if (!ids.contains(selected)) { labels.add("Unavailable driver • import again or choose System"); ids.add(selected); }
+            choice(display,"custom_driver","Vulkan driver",labels.toArray(new String[0]),ids.toArray(new String[0]),"");
+            Button install=new Button(this); install.setText("Import custom driver ZIP");
+            install.setOnClickListener(v -> {
+                if (importing) return;
+                Intent picker=new Intent(Intent.ACTION_OPEN_DOCUMENT);
+                picker.addCategory(Intent.CATEGORY_OPENABLE); picker.setType("*/*");
+                startActivityForResult(picker,IMPORT_DRIVER);
+            });
+            display.addView(install);
+            Button remove=new Button(this); remove.setText("Remove selected custom driver");
+            remove.setOnClickListener(v -> removeDriver()); display.addView(remove);
+            display.addView(text("Compatible ARM64 Vulkan driver ZIPs with meta.json. Applies on next launch; OpenGL ES always uses the system driver.",13,muted));
+            driverStatus=text("",13,muted); display.addView(driverStatus); updateDriverStatus();
+        } else display.addView(text("Custom drivers require a Vulkan-enabled build.",13,muted));
         display.addView(text("Your game data and saves stay in this app when updating. The game pauses in the background. Android Back exits to this screen.", 13, muted));
         LinearLayout presets = new LinearLayout(this);
         Button fast = new Button(this); fast.setText("Performance preset"); fast.setOnClickListener(v -> preset(true));
@@ -169,12 +189,17 @@ public final class LauncherActivity extends Activity {
         if (!romfs.isDirectory()) status.setText("Game data missing. Deploy your RomFS from the build computer first.");
     }
 
-    private void save(boolean launch) {
+    private Map<String,String> controls() {
         Map<String, String> updates = new LinkedHashMap<>();
         for (String key : choices.keySet()) updates.put(key, values.get(key)[choices.get(key).getSelectedItemPosition()]);
         for (String key : checks.keySet()) updates.put(key, checks.get(key).isChecked() ? "1" : "0");
         updates.put("volume", Integer.toString(volume.getProgress()));
         updates.put("docked", updates.get("aspect").equals("16:9") ? "0" : "1");
+        return updates;
+    }
+    private void save(boolean launch) {
+        if (importing) { status.setText("Wait for the driver import to finish"); return; }
+        Map<String,String> updates=controls();
         StringBuilder output = new StringBuilder();
         Set<String> written = new HashSet<>();
         for (String line : original.split("\\r?\\n")) {
@@ -192,8 +217,43 @@ public final class LauncherActivity extends Activity {
             }
             if (!temporary.renameTo(target)) throw new IOException("Could not replace settings file");
             original = output.toString(); settings.putAll(updates); status.setText("Settings saved");
-            if (launch) startActivity(new Intent(this, GameActivity.class));
+            if (launch) {
+                String driver="vulkan_native".equals(updates.get("renderer")) ? updates.get("custom_driver") : "";
+                DriverPackage.get(this,driver); // Validate the selected package before starting the game process.
+                startActivity(new Intent(this, GameActivity.class).putExtra("custom_driver",driver));
+            }
         } catch (Exception e) { status.setText("Could not launch/save settings: " + e.getMessage()); }
+    }
+
+    private void updateDriverStatus() {
+        if (driverStatus==null) return;
+        File file=new File(getFilesDir(),"driver-status.txt");
+        try { driverStatus.setText(file.isFile() && file.length()<8192 ? "Last launch: " + read(new FileInputStream(file)).trim() : ""); }
+        catch (IOException e) { driverStatus.setText("Could not read driver status"); }
+    }
+    @Override protected void onActivityResult(int request,int result,Intent data) {
+        super.onActivityResult(request,result,data);
+        if (request!=IMPORT_DRIVER || result!=RESULT_OK || data==null || data.getData()==null) return;
+        importing=true; status.setText("Importing driver…");
+        android.net.Uri uri=data.getData();
+        new Thread(() -> {
+            try {
+                DriverPackage.Info driver=DriverPackage.install(this,uri);
+                runOnUiThread(() -> {
+                    importing=false; settings.putAll(controls()); settings.put("custom_driver",driver.id);
+                    createScreen(); status.setText("Imported " + driver.name + ". Save settings or Play to use it.");
+                });
+            } catch (Exception e) { runOnUiThread(() -> { importing=false; status.setText("Import failed: " + e.getMessage()); }); }
+        },"DriverImport").start();
+    }
+    private void removeDriver() {
+        if (importing) return;
+        Map<String,String> current=controls(); String id=current.get("custom_driver");
+        if (id==null || id.isEmpty()) { status.setText("System driver cannot be removed"); return; }
+        try {
+            DriverPackage.remove(this,id); settings.putAll(current); settings.put("custom_driver","");
+            createScreen(); save(false); status.setText("Custom driver removed; System driver selected");
+        } catch (Exception e) { status.setText("Could not remove driver: " + e.getMessage()); }
     }
 
     private static String read(InputStream input) throws IOException {
