@@ -39,6 +39,11 @@ python\python.exe dread\make_release.py release <empty folder> --exe bin\runtime
 The release step also needs `redist\zlib1.dll` (zlib 1.3.1, x64) and `redist\SDL2.dll` (SDL 2.x x64 release), the two
 DLLs the game ships beside it. They are not in this repository.
 
+## Build (Android / Retroid)
+
+See [android/README.md](android/README.md) for the ARM64 GLES 3.2 APK build and
+deployment scripts. Requires your own extracted Metroid Dread 2.1.0 ExeFS and RomFS.
+
 ## Contributors
 
 - **yozander2009-stack** — project lead

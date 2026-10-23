@@ -340,8 +340,8 @@ static void ini_apply(const char* k, const char* v){
 #endif
     else if(!strcmp(k,"anisotropy")){ g_opt_aniso=atoi(v); if(g_opt_aniso<0) g_opt_aniso=0; if(g_opt_aniso>16) g_opt_aniso=16; }
     else if(!strcmp(k,"ultrawide")){ extern int g_opt_ultrawide; if(!aspect_given) g_opt_ultrawide=atoi(v); }   /* loader.c: theboy181's 21:9 patch */
-    else if(!strcmp(k,"aspect") && *v){ extern int g_opt_ultrawide;   /* aspect=16:9|21:9|16:10; overrides ultrawide= in any order */
-      aspect_given=1; g_opt_ultrawide= !strcmp(v,"21:9")? 1 : !strcmp(v,"16:10")? 2 : 0; }
+    else if(!strcmp(k,"aspect") && *v){ extern int g_opt_ultrawide;   /* overrides ultrawide= in any order */
+      aspect_given=1; g_opt_ultrawide= !strcmp(v,"21:9")? 1 : !strcmp(v,"16:10")? 2 : !strcmp(v,"4:3")? 3 : 0; }
     else if(!strcmp(k,"dlss")){ extern int snxvk_dlss_mode; snxvk_dlss_mode=atoi(v); }   /* native Vulkan: snxvk dlss.c; OpenGL: dlss_gl.c + gpu_gl.c dlg_* */
     else if(!strcmp(k,"texture_threads")){ g_opt_tex_threads=atoi(v); if(g_opt_tex_threads<0) g_opt_tex_threads=0; if(g_opt_tex_threads>16) g_opt_tex_threads=16; }
     else if(!strcmp(k,"fast_forward")) g_opt_ff=atoi(v);
@@ -365,7 +365,7 @@ typedef struct { const char* title; const IniOpt* o; } IniSec;
 static const IniOpt INI_DISPLAY[]={
   {"docked","0","1 = TV mode (1920x1080 / 1600x900 games), 0 = handheld mode (1280x720)"},
   {"fullscreen","1","1 = start in fullscreen (F11 or Alt+Enter toggles it in game)"},
-  {"aspect","","Picture shape (docked mode): 16:9, 21:9 (= ultrawide=1) or 16:10 (1440x900 base, fills a Steam Deck\n;   1280x800 or a 1920x1200 screen). Empty = use ultrawide=; when set it overrides ultrawide="},
+  {"aspect","","Picture shape (docked mode, restart required): 16:9, 21:9, 16:10 (1440x900), or 4:3 (1200x900).\n;   Empty = use ultrawide=; when set it overrides ultrawide="},
   {"ultrawide","0","1 = 21:9 picture for ultrawide monitors (theboy181's 21:9 patch for Dread v2.1.0,\n;   github.com/theboy181/switch-ptchtxt-mods; minor cut-offs in videos and some menus). 0 = 16:9"},
   {"language","1","Game language: 0 Japanese, 1 English (US), 2 French, 3 German, 4 Italian, 5 Spanish,\n;   6 Chinese, 7 Korean, 8 Dutch, 9 Portuguese, 10 Russian, 11 Taiwanese, 12 English (UK),\n;   13 French (Canada), 14 Spanish (Latin America)"},
   {NULL,NULL,NULL}};

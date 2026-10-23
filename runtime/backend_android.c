@@ -24,7 +24,7 @@ static ANativeWindow* g_win; static int g_win_gen;           /* bumped whenever 
 static AInputQueue* g_queue; static AInputQueue* g_queue_att; static int g_queue_dying;
 static pthread_mutex_t g_mx=PTHREAD_MUTEX_INITIALIZER; static pthread_cond_t g_cv=PTHREAD_COND_INITIALIZER;
 static int g_started;
-static char g_ext[1024], g_name[128]="BowsersFury";
+static char g_ext[1024], g_name[128]="MetroidDread";
 extern int g_overlay_visible;
 extern void overlay_touch(int id, int action, float x, float y);
 extern void overlay_state(u64* b, i32* lx, i32* ly, i32* rx, i32* ry);
@@ -88,6 +88,7 @@ void backend_gl_swap(void){
   if(esurf!=EGL_NO_SURFACE){
     EGLint w=0, h=0; eglQuerySurface(edpy,esurf,EGL_WIDTH,&w); eglQuerySurface(edpy,esurf,EGL_HEIGHT,&h); if(w>0 && h>0){ g_sw=w; g_sh=h; }
     overlay_draw(g_sw,g_sh);
+    extern void gpu_gl_fps_overlay(void); gpu_gl_fps_overlay();
     if(!eglSwapBuffers(edpy,esurf)){ EGLint e=eglGetError(); if(e==EGL_BAD_SURFACE || e==EGL_BAD_NATIVE_WINDOW){ eglMakeCurrent(edpy,epbuf,epbuf,ectx); eglDestroySurface(edpy,esurf); esurf=EGL_NO_SURFACE; } } }
   pthread_mutex_unlock(&g_mx); }
 
@@ -150,7 +151,7 @@ void video_poll(void){
   if(g_queue && !g_queue_att && !g_queue_dying){ ALooper* lp=ALooper_prepare(ALOOPER_PREPARE_ALLOW_NON_CALLBACKS); AInputQueue_attachLooper(g_queue,lp,1,NULL,NULL); g_queue_att=g_queue; }
   AInputQueue* q=g_queue_att;
   pthread_mutex_unlock(&g_mx);
-  if(q){ int dummy; void* data; while(ALooper_pollAll(0,NULL,&dummy,&data)>=0){}
+  if(q){ int dummy; void* data; ALooper_pollOnce(0,NULL,&dummy,&data);
     AInputEvent* ev=NULL; while(AInputQueue_getEvent(q,&ev)>=0){ if(AInputQueue_preDispatchEvent(q,ev)) continue; int h=handle_event(ev); AInputQueue_finishEvent(q,ev,h); } }
   u64 b=g_keys;
   if(g_hat[0]<-0.5f) b|=1ull<<12; if(g_hat[0]>0.5f) b|=1ull<<14; if(g_hat[1]<-0.5f) b|=1ull<<13; if(g_hat[1]>0.5f) b|=1ull<<15;
@@ -186,24 +187,6 @@ static int open_romfs_assets(void){
     romfs_add_chunk(fd,(u64)start,(u64)len); n++; /* intentionally never closed */ }
   return n; }
 
-/* ---------------- storage permission (JNI, UI thread) */
-static int has_all_files_access(JNIEnv* env){
-  jclass env_c=(*env)->FindClass(env,"android/os/Environment"); if(!env_c){ (*env)->ExceptionClear(env); return 0; }
-  jmethodID m=(*env)->GetStaticMethodID(env,env_c,"isExternalStorageManager","()Z"); if(!m){ (*env)->ExceptionClear(env); return 1; }  /* Android < 11 */
-  return (*env)->CallStaticBooleanMethod(env,env_c,m); }
-
-static void request_all_files(JNIEnv* env){
-  jclass ic=(*env)->FindClass(env,"android/content/Intent"); jclass uc=(*env)->FindClass(env,"android/net/Uri");
-  if(!ic||!uc){ (*env)->ExceptionClear(env); return; }
-  jmethodID ictor=(*env)->GetMethodID(env,ic,"<init>","(Ljava/lang/String;Landroid/net/Uri;)V");
-  jmethodID parse=(*env)->GetStaticMethodID(env,uc,"parse","(Ljava/lang/String;)Landroid/net/Uri;");
-  char pk[300]; jclass ac=(*env)->GetObjectClass(env,g_act->clazz); jmethodID gpn=(*env)->GetMethodID(env,ac,"getPackageName","()Ljava/lang/String;");
-  jstring js=(jstring)(*env)->CallObjectMethod(env,g_act->clazz,gpn); const char* cs=(*env)->GetStringUTFChars(env,js,NULL); snprintf(pk,sizeof pk,"package:%s",cs); (*env)->ReleaseStringUTFChars(env,js,cs);
-  jobject uri=(*env)->CallStaticObjectMethod(env,uc,parse,(*env)->NewStringUTF(env,pk));
-  jobject it=(*env)->NewObject(env,ic,ictor,(*env)->NewStringUTF(env,"android.settings.MANAGE_APP_ALL_FILES_ACCESS_PERMISSION"),uri);
-  jmethodID sa=(*env)->GetMethodID(env,ac,"startActivity","(Landroid/content/Intent;)V"); (*env)->CallVoidMethod(env,g_act->clazz,sa,it);
-  if((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env); }
-
 static void immersive(JNIEnv* env){
   jclass ac=(*env)->GetObjectClass(env,g_act->clazz); jmethodID gw=(*env)->GetMethodID(env,ac,"getWindow","()Landroid/view/Window;");
   jobject w=(*env)->CallObjectMethod(env,g_act->clazz,gw); if(!w){ (*env)->ExceptionClear(env); return; }
@@ -219,7 +202,6 @@ static void* game_thread(void* arg){ (void)arg;
   extern int swr_main(int,char**); swr_main(1,argv); return NULL; }
 
 static int dir_exists(const char* p){ struct stat s; return !stat(p,&s) && S_ISDIR(s.st_mode); }
-extern char g_romfs_dir_override[1024];
 
 /* ---------------- activity callbacks */
 static void onWindowCreated(ANativeActivity* a, ANativeWindow* w){ (void)a; pthread_mutex_lock(&g_mx); g_win=w; g_win_gen++; pthread_cond_broadcast(&g_cv); pthread_mutex_unlock(&g_mx); }
@@ -256,24 +238,17 @@ JNIEXPORT void ANativeActivity_onCreate(ANativeActivity* a, void* saved, size_t 
   { /* game name asset; APKs packaged by older versions call it nombre.txt */
     char* nm=asset_text("switchrecomp/name.txt"); if(!nm) nm=asset_text("switchrecomp/nombre.txt");
     if(nm){ strncpy(g_name,nm,sizeof g_name-1); free(nm); } }
-  const char* base= a->externalDataPath? a->externalDataPath : a->internalDataPath;
+  const char* base=a->internalDataPath;
   strncpy(g_ext,base,sizeof g_ext-1); mkdirs(g_ext);
   /* game binaries + default ini from the apk */
   char dd[1400]; snprintf(dd,sizeof dd,"%s/%s_data/exefs",g_ext,g_name); extract_dir("exefs",dd);
   { char ini[1400]; snprintf(ini,sizeof ini,"%s/%s.ini",g_ext,g_name); struct stat st; if(stat(ini,&st)){ AAsset* x=AAssetManager_open(a->assetManager,"switchrecomp/game.ini",AASSET_MODE_BUFFER);
       if(x){ FILE* f=fopen(ini,"wb"); if(f){ fwrite(AAsset_getBuffer(x),1,AAsset_getLength(x),f); fclose(f); } AAsset_close(x); } } }
-  /* romfs lookup order: apk, app dir, /sdcard/SwitchRecomp/<game>_data/romfs */
+  /* RomFS is deployed into private app storage (or bundled as APK assets). */
   int chunks=open_romfs_assets();
-  char r2[1400], r3[1400]; snprintf(r2,sizeof r2,"%s/%s_data/romfs",g_ext,g_name); snprintf(r3,sizeof r3,"/storage/emulated/0/SwitchRecomp/%s_data/romfs",g_name);
-  if(!chunks && !dir_exists(r2)){
-    if(dir_exists(r3) && access(r3,R_OK|X_OK)==0){ strncpy(g_romfs_dir_override,r3,sizeof g_romfs_dir_override-1); }
-    else {
-      char m[1024]; snprintf(m,sizeof m,"Game data is missing (romfs folder).\nCopy it from the PC (USB cable) to:\nAndroid/data/%s/files/%s_data/romfs\nor to: SwitchRecomp/%s_data/romfs\n(for the latter, enable the files permission)",
-        "com.switchrecomp.bowsersfury",g_name,g_name);
-      overlay_message(m);
-      if(!has_all_files_access(a->env)) request_all_files(a->env);
-    }
-  }
+  char romfs[1400]; snprintf(romfs,sizeof romfs,"%s/%s_data/romfs",g_ext,g_name);
+  if(!chunks && !dir_exists(romfs))
+    overlay_message("Game data is missing.\nRun android/deploy.py --romfs /path/to/romfs on the build computer.");
   pthread_t t; pthread_attr_t at; pthread_attr_init(&at); pthread_attr_setstacksize(&at,8u<<20); pthread_create(&t,&at,game_thread,NULL);
 }
 /* bionic on arm64 wants the TLS segment 64-aligned */
@@ -281,6 +256,11 @@ __thread __attribute__((aligned(64))) char swr_tls_align64;
 
 int backend_gl_worker_current(void){ return 0; }
 
-int backend_glq_ok(void){ return 0; }   /* GL calls go through glq */
+int backend_glq_ok(void){ return 0; }   /* GLES context stays on the GPU thread */
 
 int backend_pad_family(void){ return 0; }   /* no controller probe here: the game's own button icons */
+
+void backend_gl_vsync(int on){ eglSwapInterval(edpy,on? 1 : 0); }
+void mouse_map_reset(void){}
+void backend_ff_status(int on, int speed){ (void)on; (void)speed; }
+void backend_set_fullscreen(int on){ (void)on; }
