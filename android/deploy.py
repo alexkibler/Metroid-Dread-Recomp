@@ -67,7 +67,7 @@ def main():
             raise SystemExit(f'Device RomFS verification failed: {report}')
         print(f'Verified {len(rows)} device files.', flush=True)
     if not args.no_launch:
-        build.run(adb + ['shell', 'am', 'start', '-n', build.PACKAGE + '/android.app.NativeActivity'])
+        build.run(adb + ['shell', 'am', 'start', '-n', build.PACKAGE + '/.LauncherActivity'])
 
 
 if __name__ == '__main__':

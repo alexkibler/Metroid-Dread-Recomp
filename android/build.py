@@ -112,6 +112,8 @@ def package():
     config = assets / 'switchrecomp'
     config.mkdir(parents=True, exist_ok=True)
     (config / 'name.txt').write_text(NAME + '\n')
+    enabled = 'SWR_ANDROID_VULKAN:BOOL=ON' in (BUILD / 'CMakeCache.txt').read_text()
+    (config / 'capabilities.txt').write_text(f'vulkan={int(enabled)}\n')
     shutil.copy2(ANDROID / 'game.ini', config / 'game.ini')
     licenses = assets / 'licenses'
     licenses.mkdir(parents=True, exist_ok=True)
@@ -119,12 +121,23 @@ def package():
               LOCAL / 'libvpx/LICENSE', LOCAL / 'openh264/LICENSE']:
         if p.is_file():
             shutil.copy2(p, licenses / (p.parent.name + '-' + p.name))
+    if enabled:
+        for p in [ROOT / 'LICENSE-GPL-3.0.txt', ROOT / 'runtime/snxvk/LICENSE', ROOT / 'runtime/snxvk/NOTICE']:
+            shutil.copy2(p, licenses / (p.parent.name + '-' + p.name))
     unsigned = stage / 'unsigned.apk'
+    classes = LOCAL / 'classes'
+    shutil.rmtree(classes, ignore_errors=True)
+    classes.mkdir(parents=True, exist_ok=True)
+    java = sorted((ANDROID / 'java').rglob('*.java'))
+    run(['javac', '-source', '8', '-target', '8', '-classpath', sdk / 'platforms/android-35/android.jar', '-d', classes, *java])
+    run([tools / 'd8', '--min-api', '28', '--lib', sdk / 'platforms/android-35/android.jar',
+         '--output', stage, *sorted(classes.rglob('*.class'))])
     unsigned.unlink(missing_ok=True)
     run([tools / 'aapt', 'package', '-f', '-M', ANDROID / 'AndroidManifest.xml',
          '-I', sdk / 'platforms/android-35/android.jar', '-A', assets, '-F', unsigned])
     libs = ['libdread.so', 'libMetroidDread_code.so']
     with zipfile.ZipFile(unsigned, 'a', compression=zipfile.ZIP_DEFLATED) as apk:
+        apk.write(stage / 'classes.dex', 'classes.dex')
         for name in libs:
             stripped = stage / name
             shutil.copy2(BUILD / name, stripped)
@@ -147,19 +160,23 @@ def main():
     ap.add_argument('--exefs', type=Path, help='Extracted original Dread 2.1.0 ExeFS')
     ap.add_argument('--jobs', type=int, default=8)
     ap.add_argument('--package-only', action='store_true')
+    ap.add_argument('--vulkan', action='store_true', help='Build the experimental native Vulkan renderer')
     a = ap.parse_args()
     LOCAL.mkdir(parents=True, exist_ok=True)
     if not a.package_only:
         if not a.exefs:
             ap.error('--exefs is required unless --package-only is used')
         dependencies(a.jobs)
+        if a.vulkan:
+            run([sys.executable, ANDROID / 'build_vulkan.py', '--jobs', a.jobs])
         game = generate(a.exefs.resolve())
         sdk, ndk, cmake, llvm = sdk_paths()
         run([cmake / 'cmake', '-S', ANDROID, '-B', BUILD, '-G', 'Ninja',
              f'-DCMAKE_MAKE_PROGRAM={cmake / "ninja"}',
              f'-DCMAKE_TOOLCHAIN_FILE={ndk / "build/cmake/android.toolchain.cmake"}',
              '-DANDROID_ABI=arm64-v8a', '-DANDROID_PLATFORM=android-28',
-             '-DCMAKE_BUILD_TYPE=Release', f'-DGAME_BUILD_DIR={game}'])
+             '-DCMAKE_BUILD_TYPE=Release', f'-DGAME_BUILD_DIR={game}',
+             '-DSWR_ANDROID_VULKAN=' + ('ON' if a.vulkan else 'OFF')])
         run([cmake / 'cmake', '--build', BUILD, f'-j{a.jobs}'])
     package()
 

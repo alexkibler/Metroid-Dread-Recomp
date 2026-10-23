@@ -1,7 +1,8 @@
 # Android / Retroid build
 
-Builds the existing SwitchRecomp GLES 3.2 backend as an ARM64 NativeActivity APK,
-with AAudio output, physical gamepad input, OpenH264 and libvpx video decoding.
+Builds an ARM64 APK with a Java settings launcher, NativeActivity game process,
+AAudio, physical gamepad input, OpenH264 and libvpx video decoding. OpenGL ES 3.2
+is the default renderer; native Vulkan is an optional experimental build.
 Requires Android 9/API 28 or newer and OpenGL ES 3.2.
 
 Use an original extracted **Metroid Dread 2.1.0** ExeFS containing `main`,
@@ -20,6 +21,9 @@ From the repository root:
 ```sh
 python3 android/build.py --exefs /path/to/exefs --jobs 8
 python3 android/deploy.py --serial YOUR_ADB_SERIAL --romfs /path/to/romfs
+
+# Optional native Vulkan renderer (GPL-3.0-or-later ScarletNX components):
+python3 android/build.py --exefs /path/to/exefs --jobs 8 --vulkan
 ```
 
 The first build fetches pinned codec sources and checksum-verifies the Khronos
@@ -47,8 +51,26 @@ touch overlay hidden. The cap is a target; gameplay can run slower depending on
 the scene. Original cinematics can still run at 30 FPS. Change `aspect=16:9` and
 `docked=0` for the original handheld picture. Aspect and docked changes require
 a restart. Android face buttons are mapped by physical position to Switch
-controls. Windows-specific front-end menus, DLSS and native Vulkan are not
-included in this GLES build.
+controls. The launcher offers renderer, resolution, FPS limit, shadows, FXAA,
+anisotropic filtering, VSync, aspect, volume and cutscene options. Performance
+and Quality buttons fill in graphics presets; the FPS limit stays your choice.
+Save settings or Play applies the selections on the next launch.
+
+Touch controls can be disabled entirely or hidden automatically whenever a
+physical gamepad/joystick is detected, including the Nova's built-in controller.
+Touch events cannot bring the overlay back while disabled. The touch overlay is
+currently drawn by OpenGL ES only; use a physical controller with Vulkan.
+Android Back closes the game process and returns to settings. Home, screen-off,
+and activity pause suspend guest execution and rendering; resuming preserves
+the guest clock rather than advancing through time spent in the background.
+
+The Vulkan option builds the vendored ScarletNX renderer into the APK and
+compiles its compute shaders using host glslang (pinned source built if absent).
+It requires Vulkan 1.3 and device features accepted by that renderer. Check the
+runtime log for `renderer: native Vulkan`; initialization failure falls back to
+OpenGL ES. The Vulkan build includes the relevant GPL license and notices.
+Both renderers currently use the system driver. Importing Turnip drivers, DLSS,
+frame generation, and desktop front-end menus are not supported on Android.
 
 Validated on the Retroid Pocket Nova (Android 13, Adreno 740, 1280x960 at 120 Hz):
 all 9,774 RomFS files passed on-device SHA-1 verification; the game loaded an
